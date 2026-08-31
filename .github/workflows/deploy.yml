@@ -1,0 +1,39 @@
+name: Deploy CD Lab
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to server
+        env:
+          CD_DEPLOY_KEY: ${{ secrets.CD_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$CD_DEPLOY_KEY" > ~/.ssh/cd_deploy_key
+          chmod 600 ~/.ssh/cd_deploy_key
+
+          ssh-keyscan -H "${{ secrets.CD_HOST }}" >> ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/cd_deploy_key \
+            -o StrictHostKeyChecking=yes \
+            opc@"${{ secrets.CD_HOST }}" << 'EOF'
+
+            cd /home/opc/cd-lab
+
+            git fetch origin main
+            git reset --hard origin/main
+
+            sudo systemctl restart cd-lab
+            sudo systemctl is-active --quiet cd-lab
+
+            curl -f http://127.0.0.1:8000/
+
+          EOF
