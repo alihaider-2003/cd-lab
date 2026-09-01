@@ -14,7 +14,10 @@ jobs:
         env:
           CD_DEPLOY_KEY: ${{ secrets.CD_DEPLOY_KEY }}
           CD_HOST: ${{ secrets.CD_HOST }}
+
         run: |
+          set -e
+
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
@@ -25,16 +28,53 @@ jobs:
 
           ssh -i ~/.ssh/cd_deploy_key \
             -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
             opc@"$CD_HOST" << 'EOF'
 
+            set -e
+
             cd /home/opc/cd-lab
+
+            echo "Updating application from GitHub..."
 
             git fetch origin main
             git reset --hard origin/main
 
+            echo "Restarting CD Lab service..."
+
             sudo systemctl restart cd-lab
+
+            echo "Waiting for service to become active..."
+
+            for i in {1..30}; do
+              if sudo systemctl is-active --quiet cd-lab; then
+                echo "Service is active."
+                break
+              fi
+
+              echo "Waiting... attempt $i/30"
+              sleep 2
+            done
+
             sudo systemctl is-active --quiet cd-lab
 
+            echo "Waiting for application on port 8000..."
+
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:8000/ > /dev/null; then
+                echo "Application is responding."
+                break
+              fi
+
+              echo "Waiting for application... attempt $i/30"
+              sleep 2
+            done
+
+            echo "Testing application..."
+
             curl -f http://127.0.0.1:8000/
+
+            echo
+            echo "Deployment completed successfully!"
 
           EOF
